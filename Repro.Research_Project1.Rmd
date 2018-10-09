@@ -1,0 +1,212 @@
+---
+title: "Repro.Research_Project1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis of 'a personal activity monitoring device':
+
+### Step One: load and pre-process the data
+
+- Obtain data from [link in Project 1 instructions](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip)
+- save to working directory as 'activity.csv'
+- load dataset into R and check its composition
+
+```{r Load Dataset and packages}
+activity<-read.csv('activity.csv',header=TRUE)
+activity<-as.data.frame(activity)
+str(activity)
+```
+
+```{r message=FALSE,warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+```
+#### ...now pre-process the dataset
+
+- remove NAs
+
+```{r}
+activity2<-na.omit(activity, cols=steps, invert=FALSE)
+str(activity2)
+```
+
+- then assign variable names to the columns
+
+```{r Create sum of steps per day and variable names for analysis}
+date<-activity2$date
+date<-as.Date(date)
+steps<-activity2$steps
+interval<-activity2$interval
+```
+
+### Step 2: create a histogram for the total number of steps taken each day
+
+- As one tick-mark per day looks untidy, each bar here is one day, but the scale is one tick-mark per two weeks
+
+```{r Step 2 Plot 1}
+ggplot(activity2,aes(as.Date(date),steps))+stat_summary(fun.y = sum,geom = "bar",color="black",fill="blue")+scale_x_date(date_breaks="2 weeks")+theme_bw()+xlab("Date")+ylab("Number of Steps Taken")+ggtitle("Sum of Steps Taken Per Day")
+```
+
+### Step 3: Mean and median number of steps taken each day
+
+- Calculate how many steps are taken each day ('daySteps')
+- Use this to calculate the mean number of steps taken per day ('dayMean')
+- Also use daySteps to calculate the median number of steps taken per day ('dayMedian')
+
+```{r Step 3}
+daySteps <- tapply(activity2$steps, activity2$date, sum)
+dayMean <- mean(daySteps, na.rm = TRUE)
+dayMedian <- median(daySteps, na.rm = TRUE)
+
+dayMean
+dayMedian
+```
+ - As we can see (above), the mean number of steps per day is 10766.19 and the median number of steps per day is 10765
+
+### Step 4: Time-series plot of the average number of steps
+
+```{r Step 4}
+
+ggplot(activity2,aes(as.Date(date),steps))+stat_summary(fun.y = mean,geom = "line",color="black")+scale_x_date(date_breaks="2 weeks")+theme_bw()+ylab("Mean Number of Steps Taken")+ggtitle("Mean Number of Steps Taken Per Day")+xlab("Date")
+
+```
+
+### Step 5: The five-minute interval which, on average, contains the maximum number of steps
+
+- For this section we will look in more detail at each five-minute interval recorded throughout each day rather than at the distribution of the total number of steps per day
+- It is unclear whether this is to be the five-minute interval per day with the maximum number of steps, or that for the entire dataset
+- So - we will calculate both of these options
+- Option 1: the five-minute interval with the maximum number of steps across the entire dataset:
+- Identify the maximum number of steps taken in any one five-minute interval
+
+```{r max interval for dataset}
+summary(steps)
+```
+- Then, subset the dataset to find the date and interval which contributed this maximum number of steps
+
+```{r subsection activity}
+maxInterval<- activity2[which(activity2$steps=='806'),]
+maxInterval
+```
+
+- Therefore, the largest five-minute interval across the entire dataset is 806 steps taken at interval 615 on the 27th of November, 2012
+
+
+- Option 2: the five-minute interval, after averaging, which contains the maximum number of steps:
+- First, we want to see what the distribution looks like for average number of steps taken per five-minute time interval:
+
+```{r average interval}
+intervalSteps <- aggregate(steps~interval,data=activity,FUN=mean,na.action=na.omit)
+intervalSteps$time <- intervalSteps$interval
+h <- ggplot(intervalSteps, aes(time, steps))
+h+geom_line(col="black")+ggtitle("Average steps taken per interval")+xlab("Interval Value")+ylab("Average Steps Taken")+theme_bw()
+
+```
+
+- So, the five-minute interval in question is between intervals 750 and 1000. We can subset this and look, but first lets shorten the x-axis of this graph to 'zoom in' on a narrower range of intervals
+
+```{r average interval zoomed}
+intervalSteps <- aggregate(steps~interval,data=activity,FUN=mean,na.action=na.omit)
+intervalSteps$time <- intervalSteps$interval
+h <- ggplot(intervalSteps, aes(time, steps))
+h+geom_line(col="black")+ggtitle("Average Steps Taken per Interval")+xlab("Interval Value")+ylab("Average Steps Taken")+xlim(800,1000)+theme_bw()
+
+```
+
+- Therefore, we want to sub-set the average interval data to see which specific interval between intervals 800 and 850 has the greatest number of average steps
+
+```{r subsection average interval}
+averageInterval<- intervalSteps[which(intervalSteps$interval>='800' & intervalSteps$interval<='850'),]
+averageInterval
+```
+
+- This tells us that the largest five-minute interval for the averaged data is interval number 835, with circa 206 steps
+
+### Step 6: Describe and show a strategy for imputing missing data
+
+- Let's check again what percentage of the activity dataset has missing values:
+
+```{r missing values}
+steps1<-activity$steps
+mean(is.na(steps1))
+```
+- So we are missing about 13% of entries for steps and need to impute these values
+
+- We will attempt this using the mean number of steps observed for each time interval and using these as replacements for the NAs for that interval
+
+```{r impute missing data}
+
+imp <- tbl_df(activity)
+imp %>% filter(is.na(steps)) %>% summarize(missing_values = n())
+
+activity$ImputedSteps <- ifelse(is.na(activity$steps), round(intervalSteps$steps[match(activity$interval, intervalSteps$interval)],0), activity$steps)
+
+activity3 <- data.frame(steps=activity$ImputedSteps, interval=activity$interval, date=activity$date)
+
+```
+- This gives us a new dataset - activity3 - which contains the imputed values for the missing data
+
+```{r}
+head(activity3)
+```
+
+### Step 7: Histogram of the total number of steps taken each day after missing values are imputed
+
+```{r Step 7 Plot 1}
+ggplot(activity3,aes(as.Date(date),steps))+stat_summary(fun.y = sum,geom = "bar",color="black",fill="green4")+scale_x_date(date_breaks="2 weeks")+theme_bw()+xlab("Date")+ylab("Number of Steps Taken")+ggtitle("Sum of Steps Taken Per Day - Including Imputed Data")
+```
+
+- Let's compare the results of the original activity dataset against the new one with imputed values:
+
+```{r}
+p1<-ggplot(activity2,aes(as.Date(date),steps))+stat_summary(fun.y = sum,geom = "bar",color="black",fill="blue")+scale_x_date(date_breaks="2 weeks")+theme_bw()+xlab("Date")+ylab("Number of Steps Taken")+ggtitle("Steps Per Day - Original Dataset")
+
+p2<-ggplot(activity3,aes(as.Date(date),steps))+stat_summary(fun.y = sum,geom = "bar",color="black",fill="green4")+scale_x_date(date_breaks="2 weeks")+theme_bw()+xlab("Date")+ylab("Number of Steps Taken")+ggtitle("Steps Per Day - Imputed Data")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+### Step 8: Panel plot comparing the average number of steps taken per 5-minute interval across weekdays and weekends
+
+- First, we have to identify which dates are weekdays, and which are weekends, by correctly formatting the dates in the new imputed dataset 'activity3'
+
+```{r}
+activity3$Date <- as.Date(activity3$date, format = "%Y-%m-%d")
+head(activity3)
+```
+
+- Then we can create a new variable 'weekday' based on these dates and the weekday() function
+
+```{r}
+
+activity3$weekday <- weekdays(activity3$Date)
+activity3$Type <- ifelse(activity3$weekday=='Saturday' | activity3$weekday=='Sunday', 'weekend','weekday')
+head(activity3)
+
+```
+
+- Now that we know which intervals and dates are from weekdays and which from weekends, we can seperate these into two datasets
+
+```{r}
+WDay<-activity3[activity3$Type == "weekday", ]
+WEnd<-activity3[activity3$Type == "weekend", ]
+
+
+```
+
+- ... and then plot them out side-by-side
+
+```{r}
+a1<-ggplot(WDay,aes(interval,steps))+stat_summary(fun.y = sum,geom = "line",color="black")+theme_bw()+xlab("Interval")+ylab("Number of Steps Taken")+ggtitle("Average Steps - Weekday")+ylim(0,10500)
+
+a2<-ggplot(WEnd,aes(interval,steps))+stat_summary(fun.y = sum,geom = "line",color="red")+theme_bw()+xlab("Interval")+ylab("Number of Steps Taken")+ggtitle("Average Steps - Weekend")+ylim(0,10500)
+
+grid.arrange(a1, a2, nrow = 2)
+```
+
